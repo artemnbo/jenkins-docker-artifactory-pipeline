@@ -1,8 +1,3 @@
-def sonarProjectKey = 'testProject'
-def sonarProjectName = 'TestProject'
-def sonarProjectVersion = '1.0' 
-def sonarProjectSource = '.'
-
 pipeline {
     agent {
         dockerfile {
@@ -20,26 +15,23 @@ pipeline {
             }
         }
 
-        stage('SonarQube Code analysis'){
+        stage('Publish package to Artifactory') {
             steps {
-              script {
-                    withSonarQubeEnv('SonarQube Server') {
-                        sh '${SONAR_RUNNER_HOME}/bin/sonar-scanner -Dsonar.projectKey=' + sonarProjectKey + ' -Dsonar.projectName=' + sonarProjectName + ' -Dsonar.projectVersion=' + sonarProjectVersion + ' -Dsonar.sources=' + sonarProjectSource
-                    }
-                }
-            }
-        }
-        
-        stage("Quality Gate"){
-           steps {
                 script {
-                
-                    timeout(time: 160, unit: 'SECONDS') {
-                        def qg = waitForQualityGate()
-                        if (qg.status != 'OK') {
-                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
-                        }
-                    }
+                    zmsg = sh returnStdout: true, script: "zip -r package.zip src/*"
+                    print zmsg
+                    def branch = env.GIT_BRANCH.tokenize('/').last()
+                    def server = Artifactory.server 'JFrog Artifactory Server'
+                    def uploadSpec = """{
+                        "files": [
+                            {
+                                "pattern": "package.zip",
+                                "target": "local-repo/testPrj/${branch}/testPrj-${env.BUILD_NUMBER}-${env.BUILD_TIMESTAMP}.zip"
+                            }
+                        ]
+                    }"""
+                    server.upload(uploadSpec)
+                    sh 'rm -v package.zip'
                 }
             }
         }
